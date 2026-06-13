@@ -1,0 +1,195 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  ADMIN
+  USUARIO
+}
+
+enum CompetitionStatus {
+  DRAFT
+  ACTIVE
+  CLOSED
+}
+
+enum MatchStatus {
+  SCHEDULED
+  LIVE
+  FINISHED
+  CANCELED
+}
+
+enum ScoringCriterion {
+  PLACAR_EXATO
+  DIFERENCA_GOLS
+  VENCEDOR
+  ERROU
+}
+
+model User {
+  id           Int               @id @default(autoincrement()) @map("id_usuario")
+  name         String            @map("nome")
+  login        String            @unique
+  passwordHash String            @map("senha_hash")
+  role         UserRole          @default(USUARIO) @map("tipo_usuario")
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @updatedAt @map("updated_at")
+  competitions UserCompetition[]
+  bets         Bet[]
+  standings    CompetitionStanding[]
+
+  @@map("usuario")
+}
+
+model Competition {
+  id           Int               @id @default(autoincrement()) @map("id_competicao")
+  name         String            @map("nome")
+  startDate    DateTime          @map("data_inicio")
+  status       CompetitionStatus @default(DRAFT)
+  createdAt    DateTime          @default(now()) @map("created_at")
+  updatedAt    DateTime          @updatedAt @map("updated_at")
+  participants UserCompetition[]
+  matches      Match[]
+  standings    CompetitionStanding[]
+
+  @@map("competicao")
+}
+
+model UserCompetition {
+  userId        Int        @map("id_usuario")
+  competitionId Int        @map("id_competicao")
+  joinedAt      DateTime   @default(now()) @map("data_entrada")
+  user          User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  competition   Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+
+  @@id([userId, competitionId])
+  @@index([competitionId])
+  @@map("usuario_competicao")
+}
+
+model Team {
+  id          Int      @id @default(autoincrement()) @map("id_time")
+  name        String   @map("nome")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+  players     Player[]
+  homeMatches Match[]  @relation("homeTeam")
+  awayMatches Match[]  @relation("awayTeam")
+
+  @@map("time")
+}
+
+model Player {
+  id           Int        @id @default(autoincrement()) @map("id_jogador")
+  name         String     @map("nome")
+  teamId       Int        @map("id_time")
+  team         Team       @relation(fields: [teamId], references: [id], onDelete: Restrict)
+  officialGoals OfficialGoal[]
+  betGoals     BetPlayerGoal[]
+  createdAt    DateTime   @default(now()) @map("created_at")
+  updatedAt    DateTime   @updatedAt @map("updated_at")
+
+  @@index([teamId])
+  @@map("jogador")
+}
+
+model Match {
+  id           Int          @id @default(autoincrement()) @map("id_partida")
+  homeTeamId   Int          @map("equipe_1")
+  awayTeamId   Int          @map("equipe_2")
+  homeScore    Int?         @map("placar_equipe_1")
+  awayScore    Int?         @map("placar_equipe_2")
+  competitionId Int         @map("id_competicao")
+  matchDate    DateTime     @map("data_partida")
+  brazilGame   Boolean      @default(false) @map("jogo_brasil")
+  status       MatchStatus  @default(SCHEDULED)
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+  competition  Competition  @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+  homeTeam     Team         @relation("homeTeam", fields: [homeTeamId], references: [id], onDelete: Restrict)
+  awayTeam     Team         @relation("awayTeam", fields: [awayTeamId], references: [id], onDelete: Restrict)
+  bets         Bet[]
+  officialGoals OfficialGoal[]
+
+  @@index([competitionId, matchDate])
+  @@map("partida")
+}
+
+model Bet {
+  id           Int            @id @default(autoincrement()) @map("id_palpite")
+  userId       Int            @map("id_usuario")
+  matchId      Int            @map("id_partida")
+  homeScore    Int            @map("placar_equipe_1")
+  awayScore    Int            @map("placar_equipe_2")
+  createdAt    DateTime       @default(now()) @map("created_at")
+  updatedAt    DateTime       @updatedAt @map("updated_at")
+  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  match        Match          @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  playerGoals  BetPlayerGoal[]
+  score        BetScore?
+
+  @@unique([userId, matchId])
+  @@index([matchId])
+  @@map("palpite")
+}
+
+model BetPlayerGoal {
+  betId        Int      @map("id_palpite")
+  playerId     Int      @map("id_jogador")
+  goalsCount   Int      @default(1) @map("contador_gols")
+  bet          Bet      @relation(fields: [betId], references: [id], onDelete: Cascade)
+  player       Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@id([betId, playerId])
+  @@index([playerId])
+  @@map("palpite_gol_jogador")
+}
+
+model OfficialGoal {
+  matchId      Int      @map("id_partida")
+  playerId     Int      @map("id_jogador")
+  goalsCount   Int      @default(1) @map("contador_gols")
+  match        Match    @relation(fields: [matchId], references: [id], onDelete: Cascade)
+  player       Player   @relation(fields: [playerId], references: [id], onDelete: Cascade)
+
+  @@id([matchId, playerId])
+  @@index([playerId])
+  @@map("gols")
+}
+
+model BetScore {
+  id                 Int              @id @default(autoincrement()) @map("id_pontuacao_palpite")
+  betId              Int              @unique @map("id_palpite")
+  pointsResult       Int              @default(0) @map("pontos_resultado")
+  pointsPlayerGoals  Int              @default(0) @map("pontos_gols_jogadores")
+  pointsTotal        Int              @default(0) @map("pontos_total")
+  resultCriterion    ScoringCriterion @default(ERROU) @map("criterio_resultado")
+  brazilGame         Boolean          @default(false) @map("jogo_brasil")
+  calculatedAt       DateTime         @default(now()) @map("calculado_em")
+  bet                Bet              @relation(fields: [betId], references: [id], onDelete: Cascade)
+
+  @@map("pontuacao_palpite_partida")
+}
+
+model CompetitionStanding {
+  userId            Int        @map("id_usuario")
+  competitionId     Int        @map("id_competicao")
+  totalPoints       Int        @default(0) @map("pontos_total")
+  betsCount         Int        @default(0) @map("quantidade_palpites")
+  exactScoreCount   Int        @default(0) @map("quantidade_placar_exato")
+  goalDiffCount     Int        @default(0) @map("quantidade_diferenca_gols")
+  winnerCount       Int        @default(0) @map("quantidade_vencedor")
+  updatedAt         DateTime   @updatedAt @map("atualizado_em")
+  user              User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  competition       Competition @relation(fields: [competitionId], references: [id], onDelete: Cascade)
+
+  @@id([userId, competitionId])
+  @@index([competitionId, totalPoints(sort: Desc)])
+  @@map("pontuacao_usuario_competicao")
+}
